@@ -5,5 +5,5 @@
 #ifndef BIP39_BIP32_MAIN_H
 #define BIP39_BIP32_MAIN_H
 #include "bip32_bip39.h"
-
+#include "bip44.h"
 #endif //BIP39_BIP32_MAIN_H

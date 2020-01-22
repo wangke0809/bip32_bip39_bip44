@@ -50,6 +50,9 @@
 #endif
 #include "memzero.h"
 
+// FirstHardenedChild is the index of the first "hardened" child key as per the bip32 spec
+uint32_t first_hardened_child = 0x80000000;
+
 const curve_info ed25519_info = {
 	.bip32_name = "ed25519 seed",
 	.params = NULL,
@@ -357,7 +360,7 @@ int hdnode_private_ckd_cardano(HDNode *inout, uint32_t index)
 int hdnode_from_seed_cardano(const uint8_t *pass, int pass_len, const uint8_t *seed, int seed_len, HDNode *out) {
 	static CONFIDENTIAL uint8_t secret[96];
 	pbkdf2_hmac_sha512(pass, pass_len, seed, seed_len, 4096, secret, 96);
-	
+
 	secret[0] &= 248;
 	secret[31] &= 31;
 	secret[31] |= 64;
@@ -846,4 +849,118 @@ const curve_info *get_curve_by_name(const char *curve_name) {
 		return &curve25519_info;
 	}
 	return 0;
+}
+
+static inline const char* begin_of_next_range(const char* in_str, char spl)
+{
+    size_t i = 0;
+    while (in_str[i] != spl && in_str[i] != '\0') {
+        ++i;
+    }
+    if (in_str[i] != '\0') {
+        while (in_str[i] == spl)
+            ++i;
+    }
+    return &in_str[i];
+}
+
+static void split_str(const char* in_str, char spl, char const* out[])
+{
+    size_t index = 0, out_index = 0;
+    out[out_index++] = &in_str[index];
+    size_t str_len = strlen(in_str);
+    while (index < str_len) {
+        const char* bonr = begin_of_next_range(&in_str[index], spl);
+        if (*bonr == '\0') {
+            return;
+        }
+        out[out_index] = bonr;
+        index += (size_t)(bonr - &in_str[index]);
+        ++out_index;
+    }
+}
+
+static inline int number_from_node(const char* str, uint32_t* out)
+{
+    size_t digits = 0;
+    if (str[0] < '0' || str[0] > '9') {
+        return -1;
+    }
+    while (str[digits] >= '0' && str[digits] <= '9') {
+        ++digits;
+    }
+    char buf[11] = {0}; // 2^32 as max
+    digits = digits > sizeof(buf) - 1 ? 10 : digits;
+    memcpy(buf, str, digits);
+    *out = (uint32_t)atol(buf);
+    if (str[digits] == '\'') {
+        // i ≥ 2^31 (whether the child is a hardened key)
+        *out += first_hardened_child;
+    }
+    return 0;
+}
+
+int parse_path(const char* path, uint32_t* out_indexes, size_t* out_indexes_size)
+{
+    *out_indexes_size = 0;
+    // sizeof deep = 256. https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#serialization-format
+    const char* path_indexes[256] = {0};
+    split_str(path, '/', path_indexes);
+    uint32_t children_index = 0;
+    if (!number_from_node(path_indexes[0], &children_index)) { // the 'm' char
+        return -1;
+    }
+    for (size_t i = 1; path_indexes[i]; ++i) {
+        bool ret = number_from_node(path_indexes[i], &out_indexes[i - 1]);
+        if (ret) {
+            return ret;
+        }
+        ++*out_indexes_size;
+    }
+    return 0;
+}
+
+int hdnode_public_ckd_from_path(const char* path, HDNode* node)
+{
+    // sizeof deep = 256. https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#serialization-format
+    uint32_t out_indexes[256] = {0};
+    size_t out_indexes_size = 0;
+    int ret = parse_path(path, out_indexes, &out_indexes_size);
+    if (ret) {
+        return ret;
+    }
+    for (size_t i = 0; i < out_indexes_size; ++i) {
+        ret = hdnode_public_ckd(node, out_indexes[i]);
+        if (ret != 1) {
+            return ret;
+        }
+    }
+    return 0;
+}
+
+int hdnode_private_ckd_from_path(const char* path, HDNode* out)
+{
+    // sizeof deep = 256. https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki#serialization-format
+    uint32_t out_indexes[256] = {0};
+    size_t out_indexes_size = 0;
+    int ret = parse_path(path, out_indexes, &out_indexes_size);
+    if (ret) {
+        return ret;
+    }
+    for (size_t i = 0; i < out_indexes_size; ++i) {
+        ret = hdnode_private_ckd(out, out_indexes[i]);
+        if (ret != 1) {
+            return ret;
+        }
+    }
+    return 1;
+}
+
+int hdnode_private_ckd_from_path_with_seed(const char* path, const uint8_t* seed, int seed_len, const char* curve, HDNode* out)
+{
+    int ret = hdnode_from_seed(seed, seed_len, curve, out);
+    if (!ret) {
+        return ret;
+    }
+    return hdnode_private_ckd_from_path(path, out);
 }

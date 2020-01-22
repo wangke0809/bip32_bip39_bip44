@@ -1,0 +1,4 @@
+.idea/
+cmake-build-debug
+lib/libbip32_bip39-crypto.so
+lib/libbip32_bip39-crypto.so.dSYM/
