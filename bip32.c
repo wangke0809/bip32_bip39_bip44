@@ -100,6 +100,34 @@ const curve_info curve25519_info = {
 	.hasher_script = HASHER_SHA2,
 };
 
+int hdnode_for_sign_from_private_key(const uint8_t *private_key, const char* curve, HDNode *out){
+    bool failed = false;
+    const curve_info *info = get_curve_by_name(curve);
+    if (info == 0) {
+        failed = true;
+    } else if (info->params) {
+        bignum256 a;
+        bn_read_be(private_key, &a);
+        if (bn_is_zero(&a)) { // == 0
+            failed = true;
+        } else {
+            if (!bn_is_less(&a, &info->params->order)) { // >= order
+                failed = true;
+            }
+        }
+        memzero(&a, sizeof(a));
+    }
+
+    if (failed) {
+        return 0;
+    }
+
+    out->curve = info;
+    memcpy(out->private_key, private_key, 32);
+    memzero(out->public_key, sizeof(out->public_key));
+    return 1;
+}
+
 int hdnode_from_xpub(uint32_t depth, uint32_t child_num, const uint8_t *chain_code, const uint8_t *public_key, const char* curve, HDNode *out)
 {
 	const curve_info *info = get_curve_by_name(curve);

@@ -50,4 +50,17 @@ int main(void){
         printf("%02x", public_key[i]);
     }
     printf("\n");
+
+//    int hdnode_sign_digest(HDNode *node, const uint8_t *digest, uint8_t *sig, uint8_t *pby, int (*is_canonical)(uint8_t by, uint8_t sig[64]))
+
+    HDNode node2;
+    hdnode_for_sign_from_private_key((const uint8_t *)private_key, SECP256K1_NAME, &node2);
+    uint8_t digest[32] = {0};
+    uint8_t sig[64];
+    hdnode_sign_digest(&node2, digest, sig, NULL, NULL);
+
+    for(size_t i = 0; i < 64; i++) {
+        printf("%02x", sig[i]);
+    }
+    printf("\n");
 }
